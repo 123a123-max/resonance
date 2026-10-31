@@ -1,0 +1,9 @@
+{
+  "name":"resonance · 共同日记",
+  "short_name":"resonance",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#f7f4ed",
+  "theme_color":"#242321",
+  "description":"照片、视频和文字组成的共同日记"
+}
