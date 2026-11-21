@@ -1,0 +1,2 @@
+import React from 'react';import{createRoot}from'react-dom/client';import App from './App';import './styles.css';if('serviceWorker' in navigator){window.addEventListener('load',()=>{if(import.meta.env.DEV){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()))}else navigator.serviceWorker.register('/sw.js').catch(()=>{})})};createRoot(document.getElementById('root')!).render(<App/>);
+
