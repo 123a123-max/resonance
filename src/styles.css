@@ -43,3 +43,7 @@
   .unified-slide-card{min-height:250px}.slide-strip{gap:8px}.slide-card{min-width:86vw}
   .media-preview{min-height:200px}.media-preview img,.media-preview video{max-height:58vh}
 }
+.avatar,.member-avatar{overflow:hidden}.avatar img,.member-avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+.moment,.assign-row,.video-pick-row,.archive-row{content-visibility:auto;contain-intrinsic-size:auto 90px}
+.panel{overscroll-behavior:contain;max-height:90dvh}.thumb img{image-rendering:auto}.previewable{cursor:zoom-in}
+@media(max-width:600px){.video-pick-row{flex-wrap:wrap}.video-pick-row>span:last-child{display:flex;gap:4px;flex-wrap:wrap}.member-columns{max-width:100%;overflow-x:auto}.media-preview img{width:100%;height:auto;max-height:70dvh;object-fit:contain}.assign-list img,.video-picker img{max-width:100%}.panel{width:100%;min-width:0}.head{flex-wrap:wrap}}

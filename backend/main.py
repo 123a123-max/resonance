@@ -1,5 +1,5 @@
 from datetime import datetime, date
-import os
+import os, hashlib
 from pathlib import Path
 import secrets, shutil, json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -11,6 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
 
 ROOT = Path(os.environ.get('PLOG_DATA_DIR', str(Path(__file__).resolve().parent)))
+ROOT.mkdir(parents=True, exist_ok=True)
 UPLOADS = ROOT / "uploads"
 UPLOADS.mkdir(exist_ok=True)
 engine = create_engine(f"sqlite:///{ROOT / 'plog.db'}", connect_args={"check_same_thread": False, "timeout": 5}, poolclass=NullPool)
@@ -30,6 +31,8 @@ class Member(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey('groups.id'))
     nickname: Mapped[str] = mapped_column(String(80))
+    avatar: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    recovery_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 class Archive(Base):
     __tablename__ = 'archives'
@@ -54,6 +57,13 @@ class Moment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(engine)
+try:
+    with engine.begin() as conn:
+        cols=[row[1] for row in conn.execute(text('PRAGMA table_info(members)'))]
+        if 'avatar' not in cols: conn.execute(text('ALTER TABLE members ADD COLUMN avatar TEXT'))
+        if 'recovery_hash' not in cols: conn.execute(text('ALTER TABLE members ADD COLUMN recovery_hash VARCHAR(64)'))
+except Exception:
+    pass
 with engine.begin() as conn:
     try: conn.execute(text('ALTER TABLE groups ADD COLUMN owner_member_id INTEGER'))
     except Exception: pass
@@ -64,8 +74,10 @@ app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], all
 app.mount('/uploads', StaticFiles(directory=UPLOADS), name='uploads')
 
 class GroupCreate(BaseModel): name: str; nickname: str | None = None
-class MemberCreate(BaseModel): nickname: str
-class MemberUpdate(BaseModel): nickname: str
+class MemberCreate(BaseModel):
+    nickname: str
+    recovery_code: str | None = None
+class MemberUpdate(BaseModel): nickname: str | None = None; avatar: str | None = None
 class SettingsUpdate(BaseModel): collection_time: str
 
 @app.get('/api/groups/{group_id}/archives')
@@ -128,7 +140,14 @@ def get_settings(group_id: int):
 def add_member(group_id: int, payload: MemberCreate):
     db=SessionLocal();
     if not db.get(Group,group_id): raise HTTPException(404,'小组不存在')
-    m=Member(group_id=group_id,nickname=payload.nickname); db.add(m); db.commit(); db.refresh(m); return {'id':m.id,'nickname':m.nickname}
+    if payload.recovery_code:
+        digest=hashlib.sha256(payload.recovery_code.strip().upper().encode()).hexdigest()
+        m=db.query(Member).filter_by(group_id=group_id,recovery_hash=digest).first()
+        if not m: raise HTTPException(403,'识别码不正确或成员已被移除，请勿重复创建成员')
+        return {'id':m.id,'nickname':m.nickname,'avatar':m.avatar,'recovery_code':payload.recovery_code.strip().upper()}
+    code=secrets.token_hex(12).upper()
+    m=Member(group_id=group_id,nickname=payload.nickname,recovery_hash=hashlib.sha256(code.encode()).hexdigest()); db.add(m); db.commit(); db.refresh(m)
+    return {'id':m.id,'nickname':m.nickname,'avatar':m.avatar,'recovery_code':code}
 @app.delete('/api/members/{member_id}')
 def remove_member(member_id: int, requester_id: int):
     db=SessionLocal(); m=db.get(Member, member_id)
@@ -142,14 +161,17 @@ def remove_member(member_id: int, requester_id: int):
 def update_member(member_id: int, payload: MemberUpdate):
     db=SessionLocal(); m=db.get(Member, member_id)
     if not m: raise HTTPException(404,'成员不存在')
-    name=payload.nickname.strip()[:30]
-    if not name: raise HTTPException(400,'昵称不能为空')
-    m.nickname=name; db.commit(); return {'id':m.id,'nickname':m.nickname}
+    if payload.nickname is not None:
+        name=payload.nickname.strip()[:30]
+        if not name: raise HTTPException(400,'昵称不能为空')
+        m.nickname=name
+    if payload.avatar is not None: m.avatar=payload.avatar
+    db.commit(); return {'id':m.id,'nickname':m.nickname,'avatar':m.avatar}
 @app.get('/api/groups/{group_id}')
 def group_detail(group_id: int):
     db=SessionLocal(); g=db.get(Group,group_id)
     if not g: raise HTTPException(404,'小组不存在')
-    members=db.query(Member).filter_by(group_id=group_id).all(); return {'id':g.id,'name':g.name,'invite_code':g.invite_code,'collection_time':g.collection_time,'owner_member_id':g.owner_member_id,'members':[{'id':m.id,'nickname':m.nickname} for m in members]}
+    members=db.query(Member).filter_by(group_id=group_id).all(); return {'id':g.id,'name':g.name,'invite_code':g.invite_code,'collection_time':g.collection_time,'owner_member_id':g.owner_member_id,'members':[{'id':m.id,'nickname':m.nickname,'avatar':m.avatar} for m in members]}
 @app.patch('/api/groups/{group_id}/settings')
 def update_settings(group_id: int, payload: SettingsUpdate):
     if len(payload.collection_time)!=5 or payload.collection_time[2]!=':': raise HTTPException(400,'时间格式应为 HH:MM')
@@ -188,3 +210,8 @@ def withdraw(moment_id: int, requester_id: int):
     g=db.get(Group,m.group_id)
     if not g or (requester_id != g.owner_member_id and requester_id != m.member_id): raise HTTPException(403,'只能撤回自己的记录，创建者可以撤回全部记录')
     m.withdrawn=1; db.commit(); return {'ok':True}
+
+# Register after API routes so the built frontend shares the API origin.
+FRONTEND = Path(__file__).resolve().parent.parent / 'dist'
+if FRONTEND.is_dir():
+    app.mount('/', StaticFiles(directory=FRONTEND, html=True), name='resonance-web')
