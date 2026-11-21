@@ -1,13 +1,15 @@
+from collections.abc import Iterator
 from datetime import datetime, date
 import os, hashlib
 from pathlib import Path
 import secrets, shutil, json
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from typing import Annotated
+from fastapi import Depends, FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import create_engine, String, Integer, DateTime, Date, Text, ForeignKey, text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
 
 ROOT = Path(os.environ.get('PLOG_DATA_DIR', str(Path(__file__).resolve().parent)))
@@ -16,6 +18,15 @@ UPLOADS = ROOT / "uploads"
 UPLOADS.mkdir(exist_ok=True)
 engine = create_engine(f"sqlite:///{ROOT / 'plog.db'}", connect_args={"check_same_thread": False, "timeout": 5}, poolclass=NullPool)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def get_db() -> Iterator[Session]:
+    with SessionLocal() as session:
+        yield session
+
+
+DatabaseSession = Annotated[Session, Depends(get_db)]
+
 
 class Base(DeclarativeBase): pass
 class Group(Base):
@@ -81,64 +92,63 @@ class MemberUpdate(BaseModel): nickname: str | None = None; avatar: str | None =
 class SettingsUpdate(BaseModel): collection_time: str
 
 @app.get('/api/groups/{group_id}/archives')
-def list_archives(group_id: int, include_deleted: bool=False):
-    db=SessionLocal(); q=db.query(Archive).filter_by(group_id=group_id)
+def list_archives(group_id: int, db: DatabaseSession, include_deleted: bool=False):
+    q=db.query(Archive).filter_by(group_id=group_id)
     if not include_deleted: q=q.filter(Archive.deleted_at.is_(None))
     return [{'id':a.id,'date':a.date,'payload':json.loads(a.payload),'deleted_at':a.deleted_at.isoformat() if a.deleted_at else None} for a in q.order_by(Archive.created_at.desc()).all()]
 
 @app.post('/api/groups/{group_id}/archives')
-def save_archive(group_id: int, payload: dict):
-    db=SessionLocal(); g=db.get(Group,group_id)
+def save_archive(group_id: int, payload: dict, db: DatabaseSession):
+    g=db.get(Group,group_id)
     if not g: raise HTTPException(404,'小组不存在')
     a=db.get(Archive,payload.get('id')) or Archive(id=payload.get('id'),group_id=group_id,date=payload.get('date',''),payload=json.dumps(payload,ensure_ascii=False))
     a.group_id=group_id; a.date=payload.get('date',''); a.payload=json.dumps(payload,ensure_ascii=False); a.deleted_at=None; db.add(a); db.commit(); return {'ok':True,'id':a.id}
 
 @app.delete('/api/archives/{archive_id}')
-def delete_archive(archive_id: str, requester_id: int):
-    db=SessionLocal(); a=db.get(Archive,archive_id); g=db.get(Group,a.group_id) if a else None
+def delete_archive(archive_id: str, requester_id: int, db: DatabaseSession):
+    a=db.get(Archive,archive_id); g=db.get(Group,a.group_id) if a else None
     if not a: raise HTTPException(404,'归档不存在')
     if not g or requester_id!=g.owner_member_id: raise HTTPException(403,'只有创建者可以删除归档')
     a.deleted_at=datetime.utcnow(); db.commit(); return {'ok':True}
 
 @app.patch('/api/archives/{archive_id}/restore')
-def restore_archive(archive_id: str, requester_id: int):
-    db=SessionLocal(); a=db.get(Archive,archive_id); g=db.get(Group,a.group_id) if a else None
+def restore_archive(archive_id: str, requester_id: int, db: DatabaseSession):
+    a=db.get(Archive,archive_id); g=db.get(Group,a.group_id) if a else None
     if not a: raise HTTPException(404,'归档不存在')
     if not g or requester_id!=g.owner_member_id: raise HTTPException(403,'只有创建者可以恢复归档')
     a.deleted_at=None; db.commit(); return {'ok':True}
 
 @app.delete('/api/groups/{group_id}/archives/trash')
-def empty_archive_trash(group_id: int, requester_id: int):
-    db=SessionLocal(); g=db.get(Group,group_id)
+def empty_archive_trash(group_id: int, requester_id: int, db: DatabaseSession):
+    g=db.get(Group,group_id)
     if not g or requester_id!=g.owner_member_id: raise HTTPException(403,'只有创建者可以清空回收站')
     db.query(Archive).filter_by(group_id=group_id).filter(Archive.deleted_at.is_not(None)).delete(synchronize_session=False); db.commit(); return {'ok':True}
 
 @app.get('/api/health')
 def health(): return {'ok': True}
 @app.post('/api/groups')
-def create_group(payload: GroupCreate):
-    db=SessionLocal(); g=Group(name=payload.name, invite_code=secrets.token_urlsafe(6)[:8].upper()); db.add(g); db.commit(); db.refresh(g)
+def create_group(payload: GroupCreate, db: DatabaseSession):
+    g=Group(name=payload.name, invite_code=secrets.token_urlsafe(6)[:8].upper()); db.add(g); db.commit(); db.refresh(g)
     m=Member(group_id=g.id,nickname=(payload.nickname or '你').strip()[:30] or '你'); db.add(m); db.commit(); g.owner_member_id=m.id; db.commit(); return {'id':g.id,'name':g.name,'invite_code':g.invite_code,'collection_time':g.collection_time,'owner_member_id':m.id}
 @app.get('/api/groups/by-invite/{code}')
-def find_group(code: str):
-    db=SessionLocal(); g=db.query(Group).filter_by(invite_code=code.upper()).first()
+def find_group(code: str, db: DatabaseSession):
+    g=db.query(Group).filter_by(invite_code=code.upper()).first()
     if not g: raise HTTPException(404,'小组不存在')
     return {'id':g.id,'name':g.name,'invite_code':g.invite_code,'collection_time':g.collection_time,'owner_member_id':g.owner_member_id}
 @app.post('/api/groups/{group_id}/invite')
-def create_invite(group_id: int):
-    db=SessionLocal(); g=db.get(Group, group_id)
+def create_invite(group_id: int, db: DatabaseSession):
+    g=db.get(Group, group_id)
     if not g: raise HTTPException(404,'小组不存在')
     return {'group_id':g.id,'invite_code':g.invite_code}
 
 @app.get('/api/groups/{group_id}/settings')
-def get_settings(group_id: int):
-    db=SessionLocal(); g=db.get(Group, group_id)
+def get_settings(group_id: int, db: DatabaseSession):
+    g=db.get(Group, group_id)
     if not g: raise HTTPException(404,'小组不存在')
     return {'collection_time':g.collection_time}
 
 @app.post('/api/groups/{group_id}/members')
-def add_member(group_id: int, payload: MemberCreate):
-    db=SessionLocal();
+def add_member(group_id: int, payload: MemberCreate, db: DatabaseSession):
     if not db.get(Group,group_id): raise HTTPException(404,'小组不存在')
     if payload.recovery_code:
         digest=hashlib.sha256(payload.recovery_code.strip().upper().encode()).hexdigest()
@@ -149,8 +159,8 @@ def add_member(group_id: int, payload: MemberCreate):
     m=Member(group_id=group_id,nickname=payload.nickname,recovery_hash=hashlib.sha256(code.encode()).hexdigest()); db.add(m); db.commit(); db.refresh(m)
     return {'id':m.id,'nickname':m.nickname,'avatar':m.avatar,'recovery_code':code}
 @app.delete('/api/members/{member_id}')
-def remove_member(member_id: int, requester_id: int):
-    db=SessionLocal(); m=db.get(Member, member_id)
+def remove_member(member_id: int, requester_id: int, db: DatabaseSession):
+    m=db.get(Member, member_id)
     if not m: raise HTTPException(404,'成员不存在')
     g=db.get(Group, m.group_id)
     if not g or g.owner_member_id != requester_id: raise HTTPException(403,'只有创建者可以移出成员')
@@ -158,8 +168,8 @@ def remove_member(member_id: int, requester_id: int):
     db.delete(m); db.commit(); return {'ok':True,'member_id':member_id}
 
 @app.patch('/api/members/{member_id}')
-def update_member(member_id: int, payload: MemberUpdate):
-    db=SessionLocal(); m=db.get(Member, member_id)
+def update_member(member_id: int, payload: MemberUpdate, db: DatabaseSession):
+    m=db.get(Member, member_id)
     if not m: raise HTTPException(404,'成员不存在')
     if payload.nickname is not None:
         name=payload.nickname.strip()[:30]
@@ -168,19 +178,18 @@ def update_member(member_id: int, payload: MemberUpdate):
     if payload.avatar is not None: m.avatar=payload.avatar
     db.commit(); return {'id':m.id,'nickname':m.nickname,'avatar':m.avatar}
 @app.get('/api/groups/{group_id}')
-def group_detail(group_id: int):
-    db=SessionLocal(); g=db.get(Group,group_id)
+def group_detail(group_id: int, db: DatabaseSession):
+    g=db.get(Group,group_id)
     if not g: raise HTTPException(404,'小组不存在')
     members=db.query(Member).filter_by(group_id=group_id).all(); return {'id':g.id,'name':g.name,'invite_code':g.invite_code,'collection_time':g.collection_time,'owner_member_id':g.owner_member_id,'members':[{'id':m.id,'nickname':m.nickname,'avatar':m.avatar} for m in members]}
 @app.patch('/api/groups/{group_id}/settings')
-def update_settings(group_id: int, payload: SettingsUpdate):
+def update_settings(group_id: int, payload: SettingsUpdate, db: DatabaseSession):
     if len(payload.collection_time)!=5 or payload.collection_time[2]!=':': raise HTTPException(400,'时间格式应为 HH:MM')
-    db=SessionLocal(); g=db.get(Group,group_id)
+    g=db.get(Group,group_id)
     if not g: raise HTTPException(404,'小组不存在')
     g.collection_time=payload.collection_time; db.commit(); return {'collection_time':g.collection_time}
 @app.post('/api/groups/{group_id}/moments')
-def upload_moment(group_id: int, member_id: int=Form(...), caption: str=Form(''), file: UploadFile=File(...), duration: int|None=Form(None)):
-    db=SessionLocal();
+def upload_moment(group_id: int, db: DatabaseSession, member_id: int=Form(...), caption: str=Form(''), file: UploadFile=File(...), duration: int|None=Form(None)):
     group=db.get(Group,group_id); member=db.get(Member,member_id)
     if not group or not member or member.group_id != group_id: raise HTTPException(404,'小组或成员不存在')
     is_video=(file.content_type or '').startswith('video/')
@@ -190,11 +199,11 @@ def upload_moment(group_id: int, member_id: int=Form(...), caption: str=Form('')
     m=Moment(group_id=group_id,member_id=member_id,kind='video' if is_video else 'image',media_url=f'/uploads/{name}',caption=caption,duration=duration,day=date.today()); db.add(m); db.commit(); db.refresh(m)
     return {'id':m.id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'day':str(m.day)}
 @app.get('/api/groups/{group_id}/moments')
-def list_moments(group_id: int, day: date|None=None):
-    db=SessionLocal(); q=db.query(Moment).filter_by(group_id=group_id,withdrawn=0); items=q.filter_by(day=day or date.today()).order_by(Moment.created_at).all(); return [{'id':m.id,'member_id':m.member_id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'created_at':m.created_at.isoformat()} for m in items]
+def list_moments(group_id: int, db: DatabaseSession, day: date|None=None):
+    q=db.query(Moment).filter_by(group_id=group_id,withdrawn=0); items=q.filter_by(day=day or date.today()).order_by(Moment.created_at).all(); return [{'id':m.id,'member_id':m.member_id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'created_at':m.created_at.isoformat()} for m in items]
 @app.patch('/api/groups/{group_id}/moments/clear')
-def clear_group_moments(group_id: int, requester_id: int, day: date|None=None):
-    db=SessionLocal(); g=db.get(Group, group_id)
+def clear_group_moments(group_id: int, requester_id: int, db: DatabaseSession, day: date|None=None):
+    g=db.get(Group, group_id)
     if not g: raise HTTPException(404,'小组不存在')
     q=db.query(Moment).filter_by(group_id=group_id, withdrawn=0)
     if day is not None:
@@ -204,8 +213,8 @@ def clear_group_moments(group_id: int, requester_id: int, day: date|None=None):
     count=q.update({Moment.withdrawn:1}, synchronize_session=False); db.commit()
     return {'ok':True,'count':count}
 @app.patch('/api/moments/{moment_id}/withdraw')
-def withdraw(moment_id: int, requester_id: int):
-    db=SessionLocal(); m=db.get(Moment,moment_id)
+def withdraw(moment_id: int, requester_id: int, db: DatabaseSession):
+    m=db.get(Moment,moment_id)
     if not m: raise HTTPException(404,'记录不存在')
     g=db.get(Group,m.group_id)
     if not g or (requester_id != g.owner_member_id and requester_id != m.member_id): raise HTTPException(403,'只能撤回自己的记录，创建者可以撤回全部记录')
