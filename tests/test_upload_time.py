@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from fastapi import UploadFile
+from PIL import Image
 from starlette.datastructures import Headers
 
 
@@ -47,6 +48,24 @@ class UploadTimeTests(unittest.TestCase):
         listed = self.api.list_moments(group['id'], None)
         self.assertEqual(listed[0]['created_at'], result['created_at'])
         self.assertEqual(listed[0]['caption'], '时区回归')
+
+    def test_heic_upload_is_served_as_a_resized_jpeg(self):
+        group = self.api.create_group(self.api.GroupCreate(name='HEIC 测试'))
+        with io.BytesIO() as payload, Image.new('RGB', (1800, 100), '#b47985') as sample:
+            sample.save(payload, format='HEIF')
+            payload.seek(0)
+            upload = UploadFile(
+                file=payload,
+                filename='camera.HEIC',
+                headers=Headers({'content-type': 'image/heic'}),
+            )
+            result = self.api.upload_moment(group['id'], group['owner_member_id'], '', upload, None)
+
+        filename = Path(result['media_url']).name
+        self.assertEqual(Path(filename).suffix, '.jpg')
+        with Image.open(self.api.UPLOADS / filename) as saved:
+            self.assertEqual(saved.format, 'JPEG')
+            self.assertEqual(saved.width, 1600)
 
 
 if __name__ == '__main__':

@@ -1,14 +1,19 @@
 from datetime import datetime, date, timezone, timedelta
+from io import BytesIO
 import os, hashlib
 from pathlib import Path
 import secrets, shutil, json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
 from pydantic import BaseModel
 from sqlalchemy import create_engine, String, Integer, DateTime, Date, Text, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
+
+register_heif_opener(thumbnails=False)
 
 # Diary dates use Beijing time even when the hosting server uses UTC.
 DIARY_TIMEZONE = timezone(timedelta(hours=8))
@@ -204,8 +209,30 @@ def upload_moment(group_id: int, member_id: int=Form(...), caption: str=Form('')
     if not group or not member or member.group_id != group_id: raise HTTPException(404,'小组或成员不存在')
     is_video=(file.content_type or '').startswith('video/')
     if is_video and (duration is None or duration < 8 or duration > 60): raise HTTPException(400,'视频时长必须为 8～60 秒')
-    ext=Path(file.filename or '').suffix.lower() or ('.mp4' if is_video else '.jpg'); name=f'{secrets.token_hex(12)}{ext}'; target=UPLOADS/name
-    with target.open('wb') as out: shutil.copyfileobj(file.file,out)
+    ext = Path(file.filename or '').suffix.lower() or ('.mp4' if is_video else '.jpg')
+    image_data = None
+    if not is_video and (ext in {'.heic', '.heif'} or file.content_type in {'image/heic', 'image/heif'}):
+        if file.size is not None and file.size > 40 * 1024 * 1024:
+            raise HTTPException(413, '图片超过 40MB，请选择较小的图片')
+        try:
+            with Image.open(file.file) as image:
+                if image.format != 'HEIF':
+                    raise UnidentifiedImageError('Expected a HEIF image')
+                image = ImageOps.exif_transpose(image)
+                image.thumbnail((1600, 1600))
+                with BytesIO() as buffer:
+                    image.convert('RGB').save(buffer, format='JPEG', quality=82)
+                    image_data = buffer.getvalue()
+        except (OSError, ValueError, Image.DecompressionBombError) as error:
+            raise HTTPException(422, '无法读取这张 HEIC 照片，请尝试用相册导出为 JPEG') from error
+        ext = '.jpg'
+    name = f'{secrets.token_hex(12)}{ext}'
+    target = UPLOADS / name
+    if image_data is not None:
+        target.write_bytes(image_data)
+    else:
+        with target.open('wb') as out:
+            shutil.copyfileobj(file.file, out)
     m=Moment(group_id=group_id,member_id=member_id,kind='video' if is_video else 'image',media_url=f'/uploads/{name}',caption=caption,duration=duration,day=diary_day()); db.add(m); db.commit(); db.refresh(m)
     return {'id':m.id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'day':str(m.day),'created_at':utc_timestamp(m.created_at)}
 @app.get('/api/groups/{group_id}/moments')

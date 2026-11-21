@@ -11,8 +11,16 @@ const KEY='resonance-local-v1';const AVATAR_KEY='resonance-avatar-map-v1';const 
 const templates={a:{name:'生活拼贴',tiles:['☕','🌿','🎧']},b:{name:'时间流',tiles:['🕘','📷','🌙']},c:{name:'成员分栏',tiles:['🌻','🙂','🧑‍🤝‍🧑']},d:{name:'明信片',tiles:['✉️','📮','✨']},e:{name:'幻灯片',tiles:['▶️','⏭️','💬']},f:{name:'秋日手帐',tiles:['暖色片刻','日常拾光','秋日来信']},g:{name:'胶片旅行',tiles:['沿途风景','旅途日常','下一站']},h:{name:'四季拼贴',tiles:['春夏记忆','秋冬日常','今日收藏']}} as const;
 const blockOptions=[{type:'photo',label:'照片',icon:'📷'},{type:'video',label:'视频',icon:'🎬'},{type:'text',label:'文字',icon:'✍️'},{type:'time',label:'时间',icon:'🕘'},{type:'mood',label:'心情',icon:'🌤️'},{type:'place',label:'地点',icon:'📍'}];
 const nameLibrary=['小光','阿禾','小满','星野','南枝','云朵','果果','清风','小鹿','栗子','初夏','月亮'];const randomName=(used:string[])=>nameLibrary.find(x=>!used.includes(x))||'新朋友';const avatarLibrary=['🌻','🙂','🐱','🐶','🦊','🐻','🐼','🦁','🐸','🐵','🐰','🐨','🐯','🦄','🐙','🦋','🌈','⭐','🌙','☀️','🍀','🌿','🔥','🎧','☕','🍓'];const randomAvatar=(used:string[])=>avatarLibrary.find(x=>!used.includes(x))||avatarLibrary[Math.floor(Math.random()*avatarLibrary.length)];const emojiLibrary=['📷','🎬','✍️','🕘','🌤️','📍','☕','🌿','🎧','🌈','☀️','🌙','⭐','❤️','🦁','🐻','🐼','🐱','🐶','🦊','🍜','🍰','🎨','🎸','🏠','✈️','🚲','🌻','🍀','🔥','💡','📚','🎒','🎁','🧸','🪴'];const defaultBlocks=():Block[]=>[{type:'photo',label:'',icon:'📷'},{type:'text',label:'',icon:'✍️'},{type:'mood',label:'',icon:'🌤️'}];
-const read=():Store=>{if(sessionStorage.getItem('resonance-new-group')==='1'){sessionStorage.removeItem('resonance-new-group');return {members:[],moments:[],collectionTime:'00:00',template:'a',groupCode:crypto.randomUUID().slice(0,8).toUpperCase(),customBlocks:defaultBlocks(),customLayout:'double',customSize:'normal',archives:[],archiveTrash:[]}}try{const s=JSON.parse(localStorage.getItem(KEY)||'');const blocks=(s.customBlocks||defaultBlocks()).map((b:Block)=>({...b,icon:b.icon==='▫️'?'':b.icon}));return {...s,hiddenMomentIds:s.hiddenMomentIds||[],momentClearAt:s.momentClearAt||0,customBlocks:blocks,customLayout:s.customLayout||'double',customSize:s.customSize||'normal',archives:s.archives||[],archiveTrash:(s.archiveTrash||[]).filter((x:any)=>Date.now()-x.deletedAt<3*24*60*60*1000)}}catch{return {members:[],moments:[],collectionTime:'00:00',template:'a',groupCode:crypto.randomUUID().slice(0,8).toUpperCase(),customBlocks:defaultBlocks(),customLayout:'double',customSize:'normal',archives:[],archiveTrash:[]}}};
-const save=(s:Store)=>localStorage.setItem(KEY,JSON.stringify(s));const id=()=>crypto.randomUUID();
+const id=()=>{
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+};
+const read=():Store=>{if(sessionStorage.getItem('resonance-new-group')==='1'){sessionStorage.removeItem('resonance-new-group');return {members:[],moments:[],collectionTime:'00:00',template:'a',groupCode:id().slice(0,8).toUpperCase(),customBlocks:defaultBlocks(),customLayout:'double',customSize:'normal',archives:[],archiveTrash:[]}}try{const s=JSON.parse(localStorage.getItem(KEY)||'');const blocks=(s.customBlocks||defaultBlocks()).map((b:Block)=>({...b,icon:b.icon==='▫️'?'':b.icon}));return {...s,hiddenMomentIds:s.hiddenMomentIds||[],momentClearAt:s.momentClearAt||0,customBlocks:blocks,customLayout:s.customLayout||'double',customSize:s.customSize||'normal',archives:s.archives||[],archiveTrash:(s.archiveTrash||[]).filter((x:any)=>Date.now()-x.deletedAt<3*24*60*60*1000)}}catch{return {members:[],moments:[],collectionTime:'00:00',template:'a',groupCode:id().slice(0,8).toUpperCase(),customBlocks:defaultBlocks(),customLayout:'double',customSize:'normal',archives:[],archiveTrash:[]}}};
+const save=(s:Store)=>localStorage.setItem(KEY,JSON.stringify(s));
 const toData=(f:File)=>new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=reject;r.readAsDataURL(f)});const mediaDb=()=>new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open('resonance-media',1);req.onupgradeneeded=()=>req.result.createObjectStore('assets');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});const saveAsset=async(key:string,file:File)=>{const db=await mediaDb();await new Promise<void>((resolve,reject)=>{const tx=db.transaction('assets','readwrite');tx.objectStore('assets').put(file,key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})};const loadAsset=async(key:string)=>{const db=await mediaDb();return new Promise<string>((resolve,reject)=>{const req=db.transaction('assets').objectStore('assets').get(key);req.onsuccess=()=>resolve(req.result?URL.createObjectURL(req.result):'');req.onerror=()=>reject(req.error)})};
 const resolveServerMember=async(groupId:number,memberId:number|undefined,name:string,ownerId:number|undefined)=>{const r=await fetch(API+'/groups/'+groupId);if(!r.ok)throw Error('服务器小组不存在');const g=await r.json();const member=g.members?.find((m:any)=>m.id===memberId);if(!member)throw Error('当前成员已不在这个小组');return {group:g,memberId:member.id}};
 type SavedIdentity={memberId:number;groupId:number;nickname:string;recoveryCode?:string};
@@ -29,7 +37,103 @@ export default function App(){
  useEffect(()=>{if(!store.serverGroupId||new URLSearchParams(location.search).has('join'))return;const syncArchives=()=>{fetch(API+'/groups/'+store.serverGroupId+'/archives?include_deleted=true').then(r=>r.ok?r.json():[]).then((items:any[])=>{const archives=items.filter(x=>!x.deleted_at).map(x=>x.payload);const archiveTrash=items.filter(x=>x.deleted_at).map(x=>({archive:x.payload,deletedAt:parseServerTime(x.deleted_at)}));setStore(s=>JSON.stringify([s.archives,s.archiveTrash])===JSON.stringify([archives,archiveTrash])?s:{...s,archives,archiveTrash})}).catch(()=>{})};syncArchives();const archiveTimer=setInterval(syncArchives,5000);return()=>clearInterval(archiveTimer)},[store.serverGroupId]);
  useEffect(()=>{if(!store.serverGroupId||new URLSearchParams(location.search).has('join'))return;const timer=setInterval(()=>{fetch(API+'/groups/'+store.serverGroupId).then(r=>r.ok?r.json():null).then(g=>{if(!g)return;const currentRemote=g.members?.find((m:any)=>m.id===currentMemberId);const ownerHere=!!currentMemberId&&g.owner_member_id===currentMemberId;if(!ownerHere&&currentMemberName&&!currentRemote){setRemoved(true);return}if(currentRemote&&currentRemote.id!==currentMemberId){sessionStorage.setItem('resonance-member-id',String(currentRemote.id));setCurrentMemberId(currentRemote.id)}setStore(s=>{const nextMembers=(g.members||[]).map((m:any)=>{const old=s.members.find(x=>x.serverId===m.id);const saved=m.avatar||avatarMap()[String(m.id)];return {id:old?.id||'server-'+m.id,serverId:m.id,nickname:m.nickname,avatar:saved||(m.id===g.owner_member_id?'🌻':avatarLibrary[m.id%avatarLibrary.length])}});const same=nextMembers.length===s.members.length&&nextMembers.every((m:any,i:number)=>{const x=s.members[i];return x&&x.serverId===m.serverId&&x.nickname===m.nickname&&x.avatar===m.avatar});return same?s:{...s,ownerServerMemberId:g.owner_member_id,members:nextMembers}})}).catch(()=>{})},5000);return()=>clearInterval(timer)},[store.serverGroupId,currentMemberId]);useEffect(()=>{if(!store.serverGroupId||new URLSearchParams(location.search).has('join'))return;const pull=()=>{if(Date.now()<suppressMomentPullUntil.current)return;const requestVersion=momentPullVersion.current;fetch(API+'/groups/'+store.serverGroupId+'/moments').then(r=>r.ok?r.json():[]).then((items:any[])=>{if(requestVersion!==momentPullVersion.current)return;const remote:Moment[]=items.map(m=>({id:'server-'+m.id,serverId:m.id,memberId:String(m.member_id),kind:(m.kind==='video'?'video':'image') as 'video'|'image',media:API.replace('/api','')+m.media_url,caption:m.caption||'',createdAt:parseServerTime(m.created_at),duration:m.duration}));setServerStatus('online');setStore(s=>{const hidden=new Set(s.hiddenMomentIds||[]);const filtered=remote.filter(m=>!hidden.has(Number(m.serverId)));return {...s,moments:[...filtered,...s.moments.filter(m=>!m.serverId)]}})}).catch(()=>{})};pull();const timer=setInterval(pull,1000);window.addEventListener('focus',pull);return()=>{clearInterval(timer);window.removeEventListener('focus',pull)}},[store.serverGroupId,serverStatus]);
  const visibleMoments=[...store.moments].sort((a,b)=>a.createdAt-b.createdAt);const fallbackSlideIds=visibleMoments.map(m=>m.id);const eligibleMoments=store.moments.filter(m=>isScrapbookTemplate(template)?true:slideMode==='photos'?m.kind==='image':slideMode==='videos'?m.kind==='video':true);const slideshowItems=(store.slideIds||fallbackSlideIds).map(id=>visibleMoments.find(m=>m.id===id)).filter(Boolean) as Moment[];const currentSlide=slideshowItems.length?slideshowItems[slideIndex%slideshowItems.length]:null;const nextSlide=()=>setSlideIndex(i=>slideshowItems.length?(i+1)%slideshowItems.length:0);const prevSlide=()=>setSlideIndex(i=>slideshowItems.length?(i-1+slideshowItems.length)%slideshowItems.length:0);useEffect(()=>{if(template!=='e'||!currentSlide||currentSlide.kind==='video')return;const timer=setTimeout(nextSlide,slideshowSpeed);return()=>clearTimeout(timer)},[template,currentSlide?.id,slideshowSpeed]);useEffect(()=>{if(!selectedArchive||selectedArchive.template!=='e'||!selectedArchive.moments.length)return;const timer=setInterval(()=>{const el=archiveSlideshowRef.current;if(!el)return;const step=el.clientWidth*.82+12;const next=el.scrollLeft+step>=el.scrollWidth-el.clientWidth-4?0:el.scrollLeft+step;el.scrollTo({left:next,behavior:'smooth'})},3000);return()=>clearInterval(timer)},[selectedArchive?.id]);const me=store.members.find(m=>currentMemberId?m.serverId===currentMemberId:m.id===currentLocalMemberId)||(!store.serverGroupId?store.members[0]:undefined);const selectedCover=selectedArchive?selectedArchive.moments.find(m=>m.id===selectedArchive.coverMomentId)||selectedArchive.moments[0]:null;const today=useMemo(()=>new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric'}),[]);const invite=`${location.origin}${location.pathname}?join=${store.groupCode}`;
- const addMoment=async()=>{if(!files.length)return alert('请选择照片或视频');setBusy(true);try{const newItems:Moment[]=[];const preparedFiles:File[]=[];for(const original of files){const f=original.type.startsWith('video/')?original:await prepareImage(original);preparedFiles.push(f);if(f.size>200*1024*1024)throw Error('单个文件不能超过 200MB');let duration:number|undefined;if(f.type.startsWith('video/')){duration=await new Promise<number>((resolve,reject)=>{const v=document.createElement('video');v.preload='metadata';v.onloadedmetadata=()=>{URL.revokeObjectURL(v.src);resolve(v.duration)};v.onerror=()=>reject(Error('无法读取视频'));v.src=URL.createObjectURL(f)});if(duration<8||duration>60)throw Error('视频必须为 8～60 秒')}const assetId=id();await saveAsset(assetId,f);setMediaUrls(urls=>({...urls,[assetId]:URL.createObjectURL(f)}));newItems.push({id:id(),memberId:me?.id||'guest',kind:f.type.startsWith('video/')?'video':'image',assetId,caption,createdAt:Date.now(),duration})}setStore(s=>({...s,moments:[...newItems,...s.moments]}));if(store.serverGroupId){try{const resolved=await resolveServerMember(store.serverGroupId,currentMemberId,currentMemberName,store.ownerServerMemberId);const uploadMemberId=resolved.memberId;sessionStorage.setItem('resonance-member-id',String(uploadMemberId));setCurrentMemberId(uploadMemberId);const uploaded=await Promise.all(newItems.map(async(item,i)=>{const f=preparedFiles[i];const fd=new FormData();fd.append('file',f);fd.append('member_id',String(uploadMemberId));fd.append('caption',caption);if(item.duration)fd.append('duration',String(Math.round(item.duration)));const response=await fetch(API+'/groups/'+store.serverGroupId+'/moments',{method:'POST',body:fd});if(!response.ok){const detail=await response.text();throw Error('服务器返回 '+response.status+'：'+detail)}return response.json()}));setStore(s=>({...s,moments:s.moments.map(m=>{const i=newItems.findIndex(x=>x.id===m.id);const remote=uploaded[i];return i>=0&&remote?{...m,serverId:remote.id,createdAt:remote.created_at?parseServerTime(remote.created_at):m.createdAt,media:API.replace('/api','')+remote.media_url}:m})}));setServerStatus('online')}catch(e){setServerStatus('offline');alert('本地已保存，但服务器同步失败：'+(e instanceof Error?e.message:'请检查后端连接'))} }setFiles([]);setCaption('');setShowRecord(false)}catch(e){alert(e instanceof Error?e.message:'上传失败')}finally{setBusy(false)}};
+ const addMoment=async()=>{
+  if (!files.length || busy) {
+    if (!files.length) alert('请选择照片或视频');
+    return;
+  }
+  setBusy(true);
+  const failed:File[] = [];
+  const errors:string[] = [];
+  let offlineCount = 0;
+  const groupId = store.serverGroupId;
+  const uploadMemberId = currentMemberId || store.serverMemberId;
+
+  for (const original of files) {
+    let stage = '读取文件';
+    try {
+      const isVideo = original.type.startsWith('video/') ||
+        (!original.type && /\.(mov|mp4|m4v|webm)$/i.test(original.name));
+      const isHeif = /^image\/hei[cf]$/i.test(original.type) || /\.hei[cf]$/i.test(original.name);
+      const limit = isVideo ? 200 : 40;
+      if (original.size > limit * 1024 * 1024) throw Error('文件超过 '+limit+'MB');
+      let file = original;
+      if (isVideo && !file.type) {
+        const mime = /\.mov$/i.test(file.name) ? 'video/quicktime' : /\.webm$/i.test(file.name) ? 'video/webm' : 'video/mp4';
+        file = new File([file], file.name, {type:mime});
+      } else if (!isVideo && !isHeif) {
+        try {
+          file = await prepareImage(original);
+        } catch (error) {
+          // If Safari can provide a standard camera file but cannot resize it, upload the original.
+          if (!/^image\/(jpeg|png|webp)$/i.test(original.type)) throw error;
+        }
+      }
+      let duration:number|undefined;
+      if (isVideo) {
+        stage = '读取视频时长';
+        const url = URL.createObjectURL(file);
+        try {
+          duration = await new Promise<number>((resolve,reject)=>{
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            video.onloadedmetadata = ()=>resolve(video.duration);
+            video.onerror = ()=>reject(Error('无法读取视频'));
+            video.src = url;
+          });
+        } finally { URL.revokeObjectURL(url); }
+        if (!Number.isFinite(duration) || duration < 8 || duration > 60) throw Error('视频必须为 8～60 秒');
+      }
+      const item:Moment = {
+        id:id(), memberId:me?.id||'guest', kind:isVideo?'video':'image',
+        caption, createdAt:Date.now(), duration
+      };
+      if (groupId && uploadMemberId) {
+        stage = '上传到小组';
+        const form = new FormData();
+        form.append('file',file,file.name);
+        form.append('member_id',String(uploadMemberId));
+        form.append('caption',caption);
+        if (duration !== undefined) form.append('duration',String(Math.round(duration)));
+        const response = await fetch(API+'/groups/'+groupId+'/moments',{method:'POST',body:form}).catch(()=>null);
+        if (response) {
+          const remote = await response.json().catch(()=>null);
+          if (!response.ok || !remote) {
+            throw Error(typeof remote?.detail==='string' ? remote.detail : '服务器返回 '+response.status);
+          }
+          const uploaded:Moment = {
+            ...item, id:'server-'+remote.id, serverId:remote.id,
+            memberId:String(uploadMemberId),
+            media:API.replace(/\/api$/,'')+remote.media_url,
+            createdAt:parseServerTime(remote.created_at)||item.createdAt
+          };
+          setStore(current=>({...current,moments:[uploaded,...current.moments.filter(moment=>moment.serverId!==remote.id)]}));
+          continue;
+        }
+      }
+      if (isHeif) throw Error('HEIC 照片需要连接小组才能上传');
+      stage = '保存到手机';
+      const assetId = id();
+      await saveAsset(assetId,file);
+      setMediaUrls(urls=>({...urls,[assetId]:URL.createObjectURL(file)}));
+      setStore(current=>({...current,moments:[{...item,assetId},...current.moments]}));
+      offlineCount++;
+    } catch (error) {
+      const detail = error && typeof error === 'object' && 'message' in error ? String(error.message) : '操作未完成';
+      errors.push(original.name+'：'+stage+'失败，'+detail);
+      failed.push(original);
+    }
+  }
+  setFiles(failed);
+  setBusy(false);
+  if (!errors.length) {
+    setCaption('');
+    setShowRecord(false);
+  }
+  if (offlineCount && groupId) errors.push(offlineCount+' 个文件已保存在本机，尚未同步到小组。');
+  if (errors.length) alert(errors.join('\n'));
+};
+
 const changeNickname=async()=>{if(!me)return;const n=prompt('修改你的昵称',me.nickname||'');if(!n?.trim())return;try{if(me.serverId){const response=await fetch(API+'/members/'+me.serverId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({nickname:n.trim(),avatar:me.avatar})});if(!response.ok)throw Error(await response.text())}setStore(s=>({...s,members:s.members.map(m=>m.id===me.id?{...m,nickname:n.trim()}:m)}));sessionStorage.setItem('resonance-member-name',n.trim())}catch(e){alert('修改昵称失败：'+(e instanceof Error?e.message:'请检查后端连接'))}};const reconnect=async()=>{setServerStatus('checking');try{const r=await fetch(API+'/health');if(!r.ok)throw Error('offline');setServerStatus('online')}catch{setServerStatus('offline');alert('后端暂时无法连接，请确认后端窗口仍在运行')}};const clearToday=async()=>{if(!confirm(isOwner?'确定清空今天的全部记录吗？':'确定清空你今天的记录吗？'))return;try{suppressMomentPullUntil.current=Date.now()+8000;momentPullVersion.current+=1;const clearedIds=store.moments.map(m=>m.serverId).filter((x):x is number=>typeof x==='number');let ownerNow=isOwner;let requester=isOwner?store.ownerServerMemberId:currentMemberId;let remaining:any[]=[];if(store.serverGroupId){const groupResponse=await fetch(API+'/groups/'+store.serverGroupId);if(!groupResponse.ok)throw Error('无法读取小组状态');const group=await groupResponse.json();ownerNow=!!currentMemberId&&Number(group.owner_member_id)===Number(currentMemberId);requester=ownerNow?Number(group.owner_member_id):currentMemberId;if(!requester)throw Error('当前成员身份还未同步，请稍后重试');const response=await fetch(API+'/groups/'+store.serverGroupId+'/moments/clear?requester_id='+requester,{method:'PATCH'});if(!response.ok)throw Error(await response.text());const verify=await fetch(API+'/groups/'+store.serverGroupId+'/moments');if(!verify.ok)throw Error('清空后校验失败');remaining=await verify.json();if(ownerNow&&remaining.length){for(const item of remaining){const fallback=await fetch(API+'/moments/'+item.id+'/withdraw?requester_id='+requester,{method:'PATCH'});if(!fallback.ok)throw Error(await fallback.text())}const finalVerify=await fetch(API+'/groups/'+store.serverGroupId+'/moments');remaining=finalVerify.ok?await finalVerify.json():[]}}setStore(s=>{const hiddenIds=remaining.map(item=>Number(item.id)).filter(Number.isFinite);return {...s,hiddenMomentIds:Array.from(new Set([...(s.hiddenMomentIds||[]),...clearedIds,...hiddenIds])),momentClearAt:Date.now(),moments:[]}});setServerStatus('online')}catch(e){alert('清空失败：'+(e instanceof Error?e.message:'请检查后端连接'))}};
  const withdrawMoment=async(moment:Moment)=>{if(moment.serverId&&store.serverGroupId){try{const requester=currentMemberId;if(!requester)throw Error('请通过邀请链接重新确认成员身份');const response=await fetch(API+'/moments/'+moment.serverId+'/withdraw?requester_id='+requester,{method:'PATCH'});if(!response.ok)throw Error(await response.text())}catch(e){alert('服务器撤回失败：'+(e instanceof Error?e.message:'请检查后端连接'));return}}setStore(s=>({...s,moments:s.moments.filter(m=>m.id!==moment.id)}));};
  const isOwner=!!currentMemberId&&currentMemberId===store.ownerServerMemberId;const canWithdraw=(moment:Moment)=>{const owner=isOwner;const own=moment.memberId===String(currentMemberId)||(!moment.serverId&&moment.memberId===me?.id);return owner||own};const kickMember=async(member:Member)=>{if(!confirm(`确定将 ${member.nickname} 移出小组吗？`))return;const requesterId=isOwner?store.ownerServerMemberId:currentMemberId;if(member.serverId&&serverStatus==='online')try{const response=await fetch(API+'/members/'+member.serverId+'?requester_id='+requesterId,{method:'DELETE'});if(!response.ok){const detail=await response.text();throw Error(detail)}}catch(e){alert('服务器移除失败：'+(e instanceof Error?e.message:'请检查后端连接'));return}setStore(s=>({...s,members:s.members.filter(m=>m.id!==member.id)}))};
