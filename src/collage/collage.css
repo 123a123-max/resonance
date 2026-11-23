@@ -1,0 +1,183 @@
+/**
+ * 生活拼贴功能样式
+ * 复用项目现有主题变量（米白底 #f7f4ed / 橙红 #ff6947 / 边框 #e8dfd1），
+ * 仅在原有 .sheet / .panel / .btn / .tab 体系上做增量扩展。
+ */
+
+/* 共同日记卡片头部的入口按钮 */
+.diary-head-actions { display: flex; align-items: center; gap: 8px; }
+.collage-entry {
+  background: #fff;
+  color: #ff6947;
+  border: 1px solid #ffd9c7;
+  white-space: nowrap;
+}
+.collage-entry:hover { background: #fff6ef; }
+
+/* 弹窗：拼贴面板比普通面板更宽一点，容纳两列模板卡片 */
+.collage-sheet { align-items: center; }
+.collage-panel { max-width: 720px; border-radius: 22px; max-height: 92dvh; }
+
+/* 区块小标题 */
+.collage-section-title {
+  margin: 18px 0 8px;
+  font-weight: 800;
+  font-size: 14px;
+  color: #242321;
+}
+
+/* 分类筛选条 */
+.collage-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+.collage-filters .tab { flex: none; }
+
+/* 模板卡片网格 */
+.collage-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.collage-card {
+  border: 2px solid #e8dfd1;
+  border-radius: 14px;
+  background: #fff;
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+.collage-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px #4c362414; }
+.collage-card.selected {
+  border-color: var(--tpl-color, #ff6947);
+  box-shadow: 0 0 0 2px var(--tpl-color, #ff6947);
+}
+.collage-card-preview { position: relative; }
+.collage-check {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  background: var(--tpl-color, #ff6947);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 7px;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px #0003;
+}
+.collage-card-info { padding: 8px 2px 2px; }
+.collage-card-info strong { display: block; font-size: 13px; margin-bottom: 3px; }
+.collage-card-info span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #817b70;
+  min-height: 30px;
+}
+
+/* 上传区 */
+.collage-upload { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.collage-drop {
+  flex: 1 1 180px;
+  min-height: 76px;
+  border: 2px dashed #d8cdbd;
+  border-radius: 14px;
+  background: #fff;
+  color: #817b70;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font: inherit;
+  font-size: 12px;
+  transition: border-color .15s, background .15s;
+}
+.collage-drop:hover { border-color: #ff6947; background: #fff8f4; }
+.collage-upload > .btn { align-self: center; }
+
+/* 已选照片缩略图 */
+.collage-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.collage-thumb { position: relative; aspect-ratio: 1; }
+.collage-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #e8dfd1;
+}
+.collage-thumb button {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 0;
+  background: #242321;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 复制提示词链接 */
+.collage-prompt-link {
+  margin-top: 8px;
+  background: none;
+  border: 0;
+  color: #ff6947;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.collage-prompt-link:hover { text-decoration: underline; }
+
+/* 提示信息 */
+.collage-notice {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: #fff6ef;
+  border: 1px solid #ffd9c7;
+  border-radius: 10px;
+  color: #a4552f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 生成按钮区 */
+.collage-actions { display: flex; gap: 8px; margin-top: 16px; }
+.collage-actions .btn { flex: 1; }
+
+/* 结果预览层 */
+.collage-result { z-index: 6; }
+.collage-result-img {
+  width: 100%;
+  max-height: 62dvh;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid #e8dfd1;
+  background: #fff;
+  margin: 8px 0;
+}
+
+/* 移动端适配 */
+@media (max-width: 600px) {
+  .collage-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .collage-card { padding: 6px; }
+  .collage-card-info span { display: none; } /* 窄屏隐藏长描述，保留名称 */
+  .collage-panel { border-radius: 18px 18px 0 0; max-height: 94dvh; }
+}
