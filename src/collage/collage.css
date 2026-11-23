@@ -1,5 +1,5 @@
 /**
- * 生活拼贴功能样式
+ * 生活拼贴功能样式（第二版）
  * 复用项目现有主题变量（米白底 #f7f4ed / 橙红 #ff6947 / 边框 #e8dfd1），
  * 仅在原有 .sheet / .panel / .btn / .tab 体系上做增量扩展。
  */
@@ -14,13 +14,13 @@
 }
 .collage-entry:hover { background: #fff6ef; }
 
-/* 弹窗：拼贴面板比普通面板更宽一点，容纳两列模板卡片 */
+/* 弹窗：拼贴面板更宽，容纳多列模板卡片 */
 .collage-sheet { align-items: center; }
-.collage-panel { max-width: 720px; border-radius: 22px; max-height: 92dvh; }
+.collage-panel { max-width: 760px; border-radius: 22px; max-height: 92dvh; }
 
 /* 区块小标题 */
 .collage-section-title {
-  margin: 18px 0 8px;
+  margin: 16px 0 8px;
   font-weight: 800;
   font-size: 14px;
   color: #242321;
@@ -36,17 +36,17 @@
 }
 .collage-filters .tab { flex: none; }
 
-/* 模板卡片网格 */
+/* 模板卡片网格（预览图为 9:16 竖屏） */
 .collage-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 .collage-card {
   border: 2px solid #e8dfd1;
   border-radius: 14px;
   background: #fff;
-  padding: 8px;
+  padding: 7px;
   cursor: pointer;
   text-align: left;
   font: inherit;
@@ -60,31 +60,106 @@
 .collage-card-preview { position: relative; }
 .collage-check {
   position: absolute;
-  right: 6px;
-  top: 6px;
+  right: 4px;
+  top: 4px;
   background: var(--tpl-color, #ff6947);
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
-  padding: 3px 7px;
+  padding: 2px 6px;
   border-radius: 999px;
   box-shadow: 0 2px 6px #0003;
 }
-.collage-card-info { padding: 8px 2px 2px; }
-.collage-card-info strong { display: block; font-size: 13px; margin-bottom: 3px; }
-.collage-card-info span {
-  display: block;
-  font-size: 11px;
-  line-height: 1.45;
-  color: #817b70;
-  min-height: 30px;
+.collage-card-info { padding: 7px 1px 2px; }
+.collage-card-info strong { display: block; font-size: 11px; margin-bottom: 2px; line-height: 1.3; }
+.collage-card-info span { display: none; } /* 卡片较窄，描述在 title 属性看不到时靠名称识别 */
+
+/* 照片数量布局选择器 */
+.collage-layouts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
 }
+.collage-layout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid #e8dfd1;
+  border-radius: 13px;
+  background: #fff;
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: border-color .15s, background .15s;
+}
+.collage-layout.active { border-color: #ff6947; background: #fff6ef; }
+.collage-layout-count {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #f4ede3;
+  color: #8a7a63;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+}
+.collage-layout.active .collage-layout-count { background: #ff6947; color: #fff; }
+.collage-layout-text { min-width: 0; }
+.collage-layout-text b { display: block; font-size: 12px; }
+.collage-layout-text small { display: block; font-size: 10px; color: #817b70; line-height: 1.3; }
+
+/* 布局示意：竖屏 9:16 迷你框 */
+.collage-layout-demo {
+  position: relative;
+  width: 76px;
+  height: 135px;
+  margin: 12px auto 4px;
+  border: 2px dashed #d8cdbd;
+  border-radius: 10px;
+  background: #fffdf8;
+}
+.demo-photo {
+  position: absolute;
+  background: linear-gradient(135deg,#f0a97b,#8ec5d6);
+  border: 1px solid #fff;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  color: #fff;
+  box-shadow: 0 1px 3px #0002;
+}
+/* 2 张：下半部分并排 */
+.demo-2 { width: 28px; height: 38px; bottom: 18px; }
+.demo-2:nth-child(1) { left: 6px; }
+.demo-2:nth-child(2) { right: 6px; }
+/* 3 张：上左/中右/底左 */
+.demo-3 { width: 28px; height: 36px; }
+.demo-3:nth-child(1) { left: 6px; top: 8px; }
+.demo-3:nth-child(2) { right: 6px; top: 48px; }
+.demo-3:nth-child(3) { left: 6px; bottom: 8px; }
+/* 4 张：2×2 */
+.demo-4 { width: 28px; height: 50px; }
+.demo-4:nth-child(1) { left: 6px; top: 10px; }
+.demo-4:nth-child(2) { right: 6px; top: 10px; }
+.demo-4:nth-child(3) { left: 6px; bottom: 10px; }
+.demo-4:nth-child(4) { right: 6px; bottom: 10px; }
+/* 5 张：左侧三张 + 右侧两张 */
+.demo-5 { width: 24px; height: 34px; }
+.demo-5:nth-child(1) { left: 5px; top: 8px; }
+.demo-5:nth-child(2) { left: 5px; top: 50px; }
+.demo-5:nth-child(3) { left: 5px; bottom: 8px; }
+.demo-5:nth-child(4) { right: 5px; top: 24px; height: 42px; }
+.demo-5:nth-child(5) { right: 5px; bottom: 16px; height: 42px; }
 
 /* 上传区 */
 .collage-upload { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
 .collage-drop {
   flex: 1 1 180px;
-  min-height: 76px;
+  min-height: 70px;
   border: 2px dashed #d8cdbd;
   border-radius: 14px;
   background: #fff;
@@ -105,67 +180,55 @@
 /* 已选照片缩略图 */
 .collage-thumbs {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
 .collage-thumb { position: relative; aspect-ratio: 1; }
 .collage-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid #e8dfd1;
+  width: 100%; height: 100%; object-fit: cover;
+  border-radius: 10px; border: 1px solid #e8dfd1;
+}
+.collage-thumb.overflow { opacity: .4; }
+.thumb-index {
+  position: absolute; left: 3px; top: 3px;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #ff6947; color: #fff;
+  font-size: 10px; font-weight: 800;
+  display: grid; place-items: center;
 }
 .collage-thumb button {
-  position: absolute;
-  right: -4px;
-  top: -4px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 0;
-  background: #242321;
-  color: #fff;
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
+  position: absolute; right: -4px; top: -4px;
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 0; background: #242321; color: #fff;
+  font-size: 14px; line-height: 1; cursor: pointer;
 }
 
 /* 复制提示词链接 */
 .collage-prompt-link {
-  margin-top: 8px;
-  background: none;
-  border: 0;
-  color: #ff6947;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  padding: 4px 0;
+  margin-top: 8px; background: none; border: 0;
+  color: #ff6947; font: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer; padding: 4px 0;
 }
 .collage-prompt-link:hover { text-decoration: underline; }
 
 /* 提示信息 */
 .collage-notice {
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  background: #fff6ef;
-  border: 1px solid #ffd9c7;
-  border-radius: 10px;
-  color: #a4552f;
-  font-size: 12px;
-  line-height: 1.5;
+  margin: 10px 0 0; padding: 8px 10px;
+  background: #fff6ef; border: 1px solid #ffd9c7;
+  border-radius: 10px; color: #a4552f;
+  font-size: 12px; line-height: 1.5;
 }
 
 /* 生成按钮区 */
 .collage-actions { display: flex; gap: 8px; margin-top: 16px; }
 .collage-actions .btn { flex: 1; }
 
-/* 结果预览层 */
+/* 结果预览层（竖屏图，限高展示） */
 .collage-result { z-index: 6; }
 .collage-result-img {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   max-height: 62dvh;
   object-fit: contain;
   border-radius: 14px;
@@ -176,8 +239,11 @@
 
 /* 移动端适配 */
 @media (max-width: 600px) {
-  .collage-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
-  .collage-card { padding: 6px; }
-  .collage-card-info span { display: none; } /* 窄屏隐藏长描述，保留名称 */
+  .collage-grid { grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .collage-card { padding: 5px; }
+  .collage-layouts { grid-template-columns: 1fr 1fr; }
   .collage-panel { border-radius: 18px 18px 0 0; max-height: 94dvh; }
+}
+@media (max-width: 400px) {
+  .collage-grid { grid-template-columns: repeat(2, 1fr); }
 }

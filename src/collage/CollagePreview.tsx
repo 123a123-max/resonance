@@ -1,16 +1,16 @@
 /**
- * 拼贴模板预览示例图（纯 CSS 绘制）
- * ------------------------------------------------------------------
- * 每套模板用一个微缩的「示例拼贴」来展示风格，完全由 div + 内联样式构成，
- * 不加载任何外部图片，因此离线可用、无版权顾虑、体积为零。
+ * 拼贴模板预览示例图（纯 CSS 绘制，第二版）
+ * ==================================================================
+ * 每套模板用 9:16 竖屏微缩拼贴展示风格，完全由 div + 内联样式构成，
+ * 不加载外部图片：离线可用、无版权顾虑、体积为零。
  *
- * 使用几张彩色渐变块模拟真实照片，配合每套模板特有的边框 / 纹理 / 装饰，
- * 让用户一眼就能分辨风格差异。
+ * 预览遵循照片布局规则：2 张并排 / 3 张错落 / 4 张 2×2 / 5 张左侧三张+右侧叠放。
+ * 用彩色渐变块 + 小圆点模拟真实照片与人脸，配合各风格的底色 / 边框 / 装饰。
  */
 
 import type { CollageTemplate } from './templates';
 
-/** 模拟照片的渐变色板（暖、冷、绿、粉、中性），让示例更接近真实照片墙 */
+/** 模拟照片的渐变色板 */
 const PHOTO_GRADIENTS = [
   'linear-gradient(135deg,#f0a97b,#c96b4a)',
   'linear-gradient(135deg,#8ec5d6,#3f7d94)',
@@ -20,204 +20,104 @@ const PHOTO_GRADIENTS = [
   'linear-gradient(135deg,#f5d98b,#d1a24a)',
 ];
 
-interface Props {
-  template: CollageTemplate;
-}
+interface Props { template: CollageTemplate }
 
 export default function CollagePreview({ template }: Props) {
   const { theme, id } = template;
-  // 预览容器公共样式：底色 / 背景
-  const baseStyle: React.CSSProperties = {
-    background: theme.background,
-    fontFamily: 'system-ui, sans-serif',
-  };
-  // 一张模拟照片的样式构造器
+  // 单张模拟照片的样式构造器
   const photo = (i: number, extra: React.CSSProperties = {}): React.CSSProperties => ({
     position: 'absolute',
     background: PHOTO_GRADIENTS[i % PHOTO_GRADIENTS.length],
     borderRadius: theme.radius,
-    border: `${Math.max(2, theme.border / 3)}px solid ${theme.paper}`,
-    boxShadow: '0 2px 6px rgba(0,0,0,.18)',
+    border: `${Math.max(1.5, theme.border / 4)}px solid ${theme.paper}`,
+    boxShadow: '0 1px 4px rgba(0,0,0,.2)',
     overflow: 'hidden',
     ...extra,
   });
-  // 照片里的「人像」小圆点，暗示保留人脸
+  // 照片里的「人脸」小圆点
   const face = (
-    <span
-      style={{
-        position: 'absolute',
-        left: '50%',
-        top: '48%',
-        width: '28%',
-        aspectRatio: '1',
-        transform: 'translate(-50%,-50%)',
-        borderRadius: '50%',
-        background: 'rgba(255,255,255,.55)',
-      }}
-    />
+    <span style={{
+      position: 'absolute', left: '50%', top: '46%', width: '30%', aspectRatio: '1',
+      transform: 'translate(-50%,-50%)', borderRadius: '50%', background: 'rgba(255,255,255,.5)',
+    }} />
   );
 
-  /* ---- 各模板差异化的预览构图 ---- */
   let body: React.ReactNode;
-
+  // 统一用 4 张 2×2 作为示例布局（最能体现"排版好看"），个别风格做差异化
   if (id === 'ins-minimal' || id === 'macaron-cream') {
-    // 留白 / 马卡龙：超大留白 + 不对称错落
+    // 留白风格：少量照片错落，大量留白
     body = (
       <>
-        <div style={photo(0, { left: '10%', top: '20%', width: '46%', height: '52%' })}>{face}</div>
-        <div style={photo(1, { right: '8%', top: '14%', width: '30%', height: '30%' })}>{face}</div>
-        <div style={photo(2, { right: '12%', bottom: '12%', width: '34%', height: '32%' })}>{face}</div>
-        {id === 'macaron-cream' && (
-          <span style={{ position: 'absolute', right: '16%', top: '52%', color: theme.accent, fontSize: 13 }}>♥</span>
-        )}
+        <div style={photo(0, { left: '14%', top: '26%', width: '40%', height: '30%' })}>{face}</div>
+        <div style={photo(1, { right: '14%', top: '44%', width: '34%', height: '26%' })}>{face}</div>
+        {id === 'macaron-cream' && <span style={{ position: 'absolute', left: '20%', bottom: '18%', color: theme.accent, fontSize: 11 }}>♥ ✿</span>}
       </>
     );
-  } else if (id === 'four-seasons' || id === 'japanese-film') {
-    // 时间轴：竖线 + 左右交替
-    body = (
-      <>
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '8%',
-            bottom: '8%',
-            borderLeft: `2px dashed ${theme.accent}`,
-          }}
-        />
-        <div style={photo(0, { left: '8%', top: '12%', width: '34%', height: '34%' })}>{face}</div>
-        <div style={photo(1, { right: '8%', top: '40%', width: '34%', height: '34%' })}>{face}</div>
-        <div style={photo(2, { left: '8%', bottom: '8%', width: '34%', height: '30%' })}>{face}</div>
-      </>
-    );
-  } else if (id === 'pop-art') {
-    // 波普：粗黑边 + 撞色 + 网点
-    body = (
-      <>
-        <div style={photo(0, { left: '8%', top: '16%', width: '40%', height: '44%', border: '4px solid #111', borderRadius: 0 })}>{face}</div>
-        <div style={photo(1, { right: '8%', top: '16%', width: '40%', height: '44%', border: '4px solid #111', borderRadius: 0 })}>{face}</div>
-        <div
-          style={{
-            position: 'absolute',
-            left: '8%',
-            bottom: '10%',
-            width: '84%',
-            height: '12%',
-            background: '#111',
-            color: '#ffe14d',
-            fontWeight: 900,
-            fontSize: 13,
-            display: 'grid',
-            placeItems: 'center',
-            letterSpacing: 2,
-          }}
-        >
-          POP! 撞色
-        </div>
-      </>
-    );
-  } else if (id === 'calendar-diary') {
-    // 日历：网格 + 日期角标
+  } else if (id === 'four-seasons') {
+    // 四季：横向四段色带 + 照片
     body = (
       <>
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} style={photo(i, { left: `${7 + i * 23}%`, top: '22%', width: '19%', height: '48%' })}>
-            {face}
-            <span
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: 0,
-                background: theme.accent,
-                color: '#fff',
-                fontSize: 8,
-                padding: '1px 3px',
-              }}
-            >
-              {String(i + 1).padStart(2, '0')}
-            </span>
-          </div>
+          <div key={i} style={photo(i, { left: `${10 + i * 21}%`, top: i % 2 ? '48%' : '30%', width: '19%', height: '34%' })}>{face}</div>
         ))}
       </>
     );
   } else if (id === 'frosted-tech') {
-    // 磨砂科技：半透明玻璃块 + 微光边
     body = (
       <>
-        <div
-          style={{
-            ...photo(0, { left: '10%', top: '18%', width: '44%', height: '50%' }),
-            background: 'rgba(255,255,255,.5)',
-            border: '2px solid rgba(90,160,215,.7)',
-            boxShadow: '0 0 12px rgba(90,160,215,.4)',
-          }}
-        >
-          {face}
-        </div>
-        <div
-          style={{
-            ...photo(1, { right: '10%', top: '26%', width: '32%', height: '38%' }),
-            border: '2px solid rgba(90,160,215,.7)',
-            boxShadow: '0 0 12px rgba(90,160,215,.4)',
-          }}
-        >
-          {face}
-        </div>
+        {[[0, 30, 26, 38, 30], [1, 56, 42, 32, 36], [2, 26, 64, 40, 24], [3, 60, 74, 30, 18]].map(([i, l, t, w, h], k) => (
+          <div key={k} style={{
+            ...photo(i as number, { left: `${l}%`, top: `${t}%`, width: `${w}%`, height: `${h}%` }),
+            background: 'rgba(255,255,255,.55)',
+            border: '1.5px solid rgba(90,160,215,.7)',
+            boxShadow: '0 0 8px rgba(90,160,215,.35)',
+          }}>{face}</div>
+        ))}
+      </>
+    );
+  } else if (id === 'street-graffiti' || id === 'pop-art') {
+    // 涂鸦/波普：粗黑边 + 倾斜
+    body = (
+      <>
+        {[[0, 12, 28, -7], [1, 54, 30, 6], [2, 14, 60, 5], [3, 56, 62, -6]].map(([i, l, t, r], k) => (
+          <div key={k} style={photo(i as number, {
+            left: `${l}%`, top: `${t}%`, width: '38%', height: '30%',
+            border: '3px solid #111', borderRadius: 0, transform: `rotate(${r}deg)`,
+          })}>{face}</div>
+        ))}
       </>
     );
   } else {
-    // 手账 / 胶片 / 复古 / 涂鸦 / 文艺：错落倾斜 + 装饰
-    const tilts = id === 'street-graffiti' ? [-10, 8, -6] : id === 'travel-journal' ? [-7, 6, -4] : [-4, 4, -2];
+    // 其余风格（手账/胶片/复古/文艺/青春）：错落 4 张，可适度旋转
+    const tilts = id === 'travel-journal' || id === 'retro-montage' ? [-6, 5, -4, 6] : [-3, 3, -2, 2];
     body = (
       <>
-        <div style={photo(0, { left: '9%', top: '16%', width: '42%', height: '50%', transform: `rotate(${tilts[0]}deg)` })}>{face}</div>
-        <div style={photo(1, { right: '9%', top: '24%', width: '38%', height: '46%', transform: `rotate(${tilts[1]}deg)` })}>{face}</div>
-        <div style={photo(2, { left: '30%', bottom: '8%', width: '34%', height: '34%', transform: `rotate(${tilts[2]}deg)` })}>{face}</div>
-        {theme.deco && (
-          <span
-            style={{
-              position: 'absolute',
-              left: '14%',
-              top: '8%',
-              width: 34,
-              height: 12,
-              background: id === 'retro-magazine' ? 'rgba(184,85,47,.6)' : 'rgba(180,140,90,.5)',
-              transform: 'rotate(-16deg)',
-            }}
-          />
-        )}
+        <div style={photo(0, { left: '12%', top: '28%', width: '38%', height: '30%', transform: `rotate(${tilts[0]}deg)` })}>{face}</div>
+        <div style={photo(1, { right: '12%', top: '30%', width: '38%', height: '30%', transform: `rotate(${tilts[1]}deg)` })}>{face}</div>
+        <div style={photo(2, { left: '14%', bottom: '20%', width: '38%', height: '28%', transform: `rotate(${tilts[2]}deg)` })}>{face}</div>
+        <div style={photo(3, { right: '14%', bottom: '22%', width: '38%', height: '28%', transform: `rotate(${tilts[3]}deg)` })}>{face}</div>
+        {theme.deco && <span style={{
+          position: 'absolute', left: '16%', top: '14%', width: 26, height: 8,
+          background: id === 'retro-magazine' ? 'rgba(184,85,47,.6)' : 'rgba(180,140,90,.5)',
+          transform: 'rotate(-14deg)',
+        }} />}
       </>
     );
   }
 
   return (
-    <div
-      style={{
-        ...baseStyle,
-        position: 'relative',
-        width: '100%',
-        aspectRatio: '16 / 11',
-        borderRadius: 12,
-        overflow: 'hidden',
-        border: '1px solid rgba(0,0,0,.06)',
-      }}
-      aria-label={`${template.name} 风格预览示例`}
-    >
-      {/* 顶部标题条 */}
-      <div
-        style={{
-          position: 'absolute',
-          left: '8%',
-          top: '6%',
-          color: theme.ink,
-          fontWeight: 800,
-          fontSize: 11,
-          letterSpacing: '.5px',
-          zIndex: 2,
-        }}
-      >
-        {template.subtitle}
-      </div>
+    <div style={{
+      background: theme.background, position: 'relative', width: '100%',
+      aspectRatio: '9 / 16', borderRadius: 10, overflow: 'hidden',
+      border: '1px solid rgba(0,0,0,.06)',
+    }} aria-label={`${template.name} 风格预览示例`}>
+      {/* 顶部小标题条 */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, top: 0, zIndex: 2,
+        textAlign: 'center', padding: '5px 2px',
+        color: theme.ink, fontWeight: 800, fontSize: 8, letterSpacing: '.3px',
+        background: 'rgba(255,255,255,.28)',
+      }}>{template.name}</div>
       {body}
     </div>
   );
