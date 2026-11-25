@@ -147,3 +147,22 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Local runtime data (private photos / videos / database) - never commit
+backend/uploads/
+backend/*.db
+backend/plog.db
+*.sqlite
+*.sqlite3
+
+# Local python virtualenv
+backend/.venv/
+.venv/
+
+# Local server logs
+server.log
+server.err.log
+
+# Python bytecode cache
+__pycache__/
+*.pyc
