@@ -1,216 +1,157 @@
-# 生活拼贴功能 · 部署与 Git 分支完全指南
+# 生活拼贴 · 部署与 Git 分支操作指南
 
-本文档覆盖三部分：① 功能说明与使用方法；② AI 生成的可选配置；③ 从创建分支到推送、合并、部署的完整 Git 命令。
-所有命令均可直接复制执行（在 Windows 的 Git Bash / PowerShell 中均可，路径按你的实际位置调整）。
-
----
-
-## 一、功能说明
-
-### 入口
-打开网站 → 找到「共同日记」卡片 → 点击右上角 **🖼️ 生活拼贴** 按钮，弹出工作台。
-
-### 使用流程（第二版）
-1. **选风格**：点开「生活拼贴」弹出面板，首先是 13 套风格网格（INS 极简留白 / 日系盐系胶片 / 美式复古杂志 / 奶油马卡龙 / 清透 AI 科技磨砂 / 文艺宣纸书香 / 街头极简涂鸦 / 时光日历日记 / 旅行复古手账 / 清新绿调手账 / 四季叙事长卷 / 波普城市海报 / 复古蒙太奇），每套都有 9:16 竖屏 CSS 预览示例图，可点顶部标签按分类筛选。
-2. **选布局**：选择照片数量布局——2 张并排 / 3 张错落 / 4 张 2×2 / 5 张叙事，下方有竖屏迷你示意图。本地排版与 AI 提示词共用同一套布局规则。
-3. **传照片**：点「点击选择多张照片」可一次多选（最多 12 张），也可点「用今天的日记照片」快捷导入当天记录。布局只取前 N 张（N = 所选布局张数），多余照片会置灰标注，不会造成人脸融合。可逐张移除。
-4. **填标题**（可选）并点「复制完整提示词」可取到「风格 + 布局 + 正反向」组合提示词。
-5. **生成**：
-   - 「✨ AI 生成拼贴」：优先调用后端 AI 接口（风格 + 布局提示词合并发送）；**未配置 AI 时会自动降级为本地排版**，不会报错卡住。
-   - 「本地排版」：强制用纯前端 Canvas 生成 9:16 竖屏拼贴，完全离线可用。
-6. **预览与下载**：生成后可放大预览，点「⬇️ 下载 PNG」保存到本地。
-
-### 兼容性
-- 只依赖项目已有的 React + 原生 Canvas，未引入任何重型框架。
-- 新增文件：`src/collage/`（4 个）、`backend/collage_api.py`、`docs/`（2 个）。
-- 修改文件：`src/App.tsx`（4 处增量）、`src/styles.css` 无改动（样式在 collage.css 内）、`backend/main.py`（挂载 1 处）。
+本文档对应本次交付的分支 **`feature/life-collage-dynamic-layout`**：在原有 resonance 网站上新增「生活拼贴」内联设置条，14 种风格模板，照片直接取今日已上传内容，并且**按照片数量动态排版、同一风格每次生成都换一种排布**。
 
 ---
 
-## 二、AI 生成配置（可选，不配也能用本地排版）
+## 一、功能说明（与约定逐条对应）
 
-后端接口 `/api/collage/generate` 兼容 OpenAI `/v1/images/edits` 格式。配置方式：在启动后端前设置环境变量。
+入口固定为：**「共同日记」卡片 → tabs 第一个标签「生活拼贴」**。点击后标签下方**内联展开设置条**，不弹窗、不在右上角加按钮、不重复上传。
 
-### Windows PowerShell（临时，仅当前窗口有效）
-```powershell
-$env:COLLAGE_AI_API_KEY  = "你的密钥"
-$env:COLLAGE_AI_BASE_URL = "https://api.openai.com/v1"   # 或其他兼容服务
-$env:COLLAGE_AI_MODEL    = "gpt-image-1"
-# 再启动后端
-.\backend\.venv\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
+| 你的要求 | 实现方式 |
+|---|---|
+| 点击生活拼贴后展示设置 | tab 切换 `setTemplate('a')`，条件渲染 `TemplateCollagePanel`，挂在 tabs 下方 |
+| 在里面可以选择风格 | 14 个风格按钮网格，点选后状态 `styleId` 立即变化 |
+| 点击风格后右侧小框展示模板 | `.collage-preview-box` 内 `<img src={style.image}>`，随风格实时切换 |
+| 立即生成带上传照片的该风格拼贴图 | 原生 Canvas：模板底图 + 今日照片按空位贴入 + 导出 JPG |
+| 照片来源直接用今日照片 | 从 `store.moments` 过滤 `kind==='image'`，`assetId` 走 IndexedDB blob URL，服务端照片走 `media` URL |
+| 一定根据照片数量排版 | `buildLayout()`：1–4 张选空位子集 + 空位转便签卡；5–8 张拆双图格；>8 取前 8 张并提示 |
+| 主打自由随性 | 对角线/随机空位组合、照片轻度打乱、便签与手绘点缀随机 |
+| 同风格多次点击生成不同模板 | 每次换随机种子，改变空位组合/照片分配/便签文案/点缀；**可以完成**（见下方说明） |
+| 兼容原网站、不引入重型框架 | 只加 3 个 TS/TSX 文件 + CSS，依赖仅有项目原有的 React |
+
+> **关于“不同次点击同一风格生成不同模板”的可行性结论：可以完成。** 实现方式是保持风格美术底图一致（否则就不是“同一风格”了），用随机种子驱动**成品的排布与点缀**发生变化：空位组合、照片先后、便签文案、边角手绘。点结果面板里的「再来一张」即可立刻换一版。若你要求的是“连模板底图美术都完全不同”，那需要为每个风格离线预生成多套底图（14 风格 × N 套），也能做，但会显著增加仓库体积，当前版本未采用。
+
+### 技术清单
+
+- 前端：React + TypeScript + Vite；合成只用浏览器原生 Canvas 2D，无第三方图像库。
+- 模板：`public/assets/collage/template-*.jpg` 共 14 张，900×1600（9:16），由 `tools/make_*.py` 用 PIL 生成；照片空位坐标写在 `src/collage/templateStyles.ts`，与脚本严格对齐。
+- 素材：Pexels License / Wikimedia Commons，来源见 `public/assets/collage/*/SOURCES.json`。
+
+---
+
+## 二、本地运行与部署
+
+### 2.1 前端
+
+```bash
+cd resonance
+npm install
+npx tsc --noEmit          # 只做类型检查
+npm run build             # 类型检查 + Vite 打包到 dist/
+npm run dev               # 开发：0.0.0.0:3002，手机可同局域网访问
+npm run preview           # 预览 dist/
 ```
 
-### Git Bash（临时）
+### 2.2 后端（拼贴不依赖，其他功能需要）
+
 ```bash
-export COLLAGE_AI_API_KEY="你的密钥"
-export COLLAGE_AI_BASE_URL="https://api.openai.com/v1"
-export COLLAGE_AI_MODEL="gpt-image-1"
+# Windows
 backend/.venv/Scripts/python.exe -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
+# macOS / Linux
+source backend/.venv/bin/activate && uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
 ```
 
-### 变量说明
-| 变量 | 必填 | 默认 | 说明 |
-|---|---|---|---|
-| `COLLAGE_AI_API_KEY` | 否 | 空 | 不填则接口返回 503，前端自动用本地排版 |
-| `COLLAGE_AI_BASE_URL` | 否 | `https://api.openai.com/v1` | 任何兼容 OpenAI 图像接口的服务地址 |
-| `COLLAGE_AI_MODEL` | 否 | `gpt-image-1` | 图像模型名 |
-| `COLLAGE_AI_TIMEOUT` | 否 | `120` | 超时秒数 |
+前端 API 地址由 `src/App.tsx` 的 `API` 常量决定：本地开发指向 `http://<主机>:8000/api`，线上同源走 `/api`；可用 `.env` 的 `VITE_API_BASE_URL` 覆盖。后端已配置 `allow_origins=['*']`，因此服务端照片 URL 可被 Canvas 安全读取。
 
-> 安全提示：切勿把密钥写进代码或提交到 GitHub。只用环境变量注入。
+### 2.3 部署
+
+把 `dist/` 部署到任意静态托管（Nginx / Vercel / Netlify / 腾讯云静态网站均可）；若用同一域名反代 `/api` 到后端，前端 API 会自动走同源。无需为拼贴功能增加任何服务端接口或密钥。
 
 ---
 
-## 三、本地构建与运行
+## 三、新建分支、提交、推送（完整步骤）
+
+本次交付**新建**分支 `feature/life-collage-dynamic-layout`，不覆盖已有的 `feature/life-collage-integration`。
 
 ```bash
-# 进入项目目录
-cd C:/Users/lenovo/WorkBuddy/2026-11-22-11-02-32/resonance
+cd resonance
 
-# 前端：安装依赖 + 构建（改动已构建好，改代码后需重跑 build）
-npm.cmd install
-npm.cmd run build
-
-# 后端：虚拟环境已就绪，启动服务（一个端口同时提供网页 + 接口）
-backend/.venv/Scripts/python.exe -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
-```
-
-打开 http://localhost:8000/ 。局域网手机访问：http://192.168.236.127:8000/ （IP 会变，以实际为准）。
-
-> 注意：本项目依赖「纯 Python 版 SQLAlchemy」。若重建虚拟环境后报 `DLL load failed ... _cache_key_cy`，
-> 执行：`backend/.venv/Scripts/python.exe -m pip install --force-reinstall --no-deps https://files.pythonhosted.org/packages/7a/ee/9926603a1f7e88b41bc0d1e068e889fc84981553fb4e6037426d6b174da3/sqlalchemy-2.1.9-py3-none-any.whl`
-
----
-
-## 四、Git 分支创建 → 提交 → 推送到 GitHub
-
-当前目录是 ZIP 解压得到的，**没有 .git**。若你还没初始化仓库，按「场景 A」；若本地已有 git 仓库，跳到「场景 B」。
-
-### 场景 A：首次初始化本地仓库并关联 GitHub
-
-```bash
-cd C:/Users/lenovo/WorkBuddy/2026-11-22-11-02-32/resonance
-
-# 1. 初始化
-git init
-
-# 2. 关联远程仓库（换成你自己的仓库地址）
-git remote add origin https://github.com/123a123-max/resonance.git
-
-# 3. 确认分支名为 main
-git branch -M main
-```
-
-### 场景 B：已有仓库，直接新建功能分支
-
-```bash
-cd C:/Users/lenovo/WorkBuddy/2026-11-22-11-02-32/resonance
-
-# 先拉取最新代码，避免冲突
-git checkout main
-git pull origin main
-
-# 新建并切换到功能分支
-git checkout -b feature/life-collage
-```
-
-> 若你是场景 A，也要建功能分支：`git checkout -b feature/life-collage`
-
-### 提交改动（通用）
-
-```bash
-# 查看改动，确认只包含本次功能相关文件
+# 1. 确认当前改动（应看到 App.tsx、src/collage/*、public/assets/collage/*、tools/*、docs/*）
 git status
 
-# 暂存全部改动
-git add .
+# 2. 从当前分支新建并切换
+git checkout -b feature/life-collage-dynamic-layout
 
-# 提交（写清楚提交信息）
-git commit -m "feat: 生活拼贴第二版（13套风格 + 2/3/4/5张布局 + AI生成 + 本地兜底）"
+# 3. 全部加入暂存（含 14 张模板、素材、生成脚本、文档）
+git add -A
+
+# 4. 提交
+git commit -m "feat: 生活拼贴动态排版与随机变体（14 风格 + 今日照片 + 内联设置条）"
+
+# 5. 推送并建立上游跟踪
+git push -u origin feature/life-collage-dynamic-layout
 ```
 
-### 推送分支到 GitHub（通用）
+### 3.1 如果你想从主干新建（常规做法）
 
 ```bash
-# 首次推送该分支（-u 建立上游关联）
-git push -u origin feature/life-collage
+git fetch origin
+git checkout -b feature/life-collage-dynamic-layout origin/main
+# 把本次改动的文件复制进工作区后：
+git add -A
+git commit -m "feat: 生活拼贴动态排版与随机变体"
+git push -u origin feature/life-collage-dynamic-layout
 ```
 
-推送时会要求 GitHub 身份认证。**推荐用 Personal Access Token (PAT) 代替密码**：
+### 3.2 推送失败的处理
 
-1. 打开 GitHub → 右上角头像 → Settings → Developer settings → Personal access tokens → Tokens (classic)
-2. Generate new token，勾选 `repo` 权限，生成后复制（只显示一次）。
-3. 推送时用户名填 GitHub 用户名，密码处粘贴 Token。
+本项目环境曾出现 SSL / schannel 报错。推荐用 GitHub CLI 接管认证：
 
-如果 push 因网络失败（本机访问 github.com 可能被限制），可改用下面任一方式：
-- 配置代理：`git config --global http.proxy http://127.0.0.1:7890`（端口按你的代理实际值）
-- 或手动在 GitHub 网页建仓库后，用 GitHub Desktop 客户端推送
-- 或把 GitHub 仓库地址换成可用的镜像/加速地址
+```bash
+gh auth login
+gh repo set-default 123a123-max/resonance
+git push -u origin feature/life-collage-dynamic-layout
+```
+
+若 GitHub 仓库尚未创建远程分支，也可先去网页端 `Branches → New branch` 建好同名分支再推送。
 
 ---
 
-## 五、从分支合并到主干（main）
+## 四、合并到主分支
 
-### 方式一：网页端 Pull Request（推荐）
+### 4.1 网页端（推荐）
 
-1. 推送后，打开 GitHub 仓库页面，会出现 "Compare & pull request" 提示，点击。
-2. 确认 `feature/life-collage` → `main`，填写说明，点 "Create pull request"。
-3. 检查无误后点 "Merge pull request"，再 "Confirm merge"。
-4. 本地同步：
-```bash
-git checkout main
-git pull origin main
-```
+1. 打开 `https://github.com/123a123-max/resonance`
+2. **Pull requests → New pull request**
+3. base 选 `main`（或 `master`），compare 选 `feature/life-collage-dynamic-layout`
+4. 填写标题与说明，提交 PR；确认无冲突后点 **Merge pull request**
 
-### 方式二：命令行直接合并
+### 4.2 命令行
 
 ```bash
 git checkout main
 git pull origin main
-git merge feature/life-collage
+git merge --no-ff feature/life-collage-dynamic-layout
 git push origin main
-
-# 合并后可删除功能分支（可选）
-git branch -d feature/life-collage
-git push origin --delete feature/life-collage
 ```
 
 ---
 
-## 六、部署上线
+## 五、本次改动文件清单
 
-### 本机长期运行（Windows 计划任务 / NSSM）
-把启动命令做成 `.bat`：
-```bat
-@echo off
-cd /d C:\Users\lenovo\WorkBuddy\2026-11-22-11-02-32\resonance
-backend\.venv\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
-```
-双击即可启动；配合「任务计划程序」可设开机自启。
-
-### 云端部署（项目已带 render.yaml）
-本项目根目录有 `render.yaml`，可直接导入 Render.com 等支持该文件的平台。部署前记得：
-- 构建命令：`npm install && npm run build`
-- 启动命令：`python -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port $PORT`
-- 在平台环境变量里配置 `COLLAGE_AI_API_KEY` 等（可选）
-
-### 公网临时访问（Cloudflare 隧道）
-```bash
-cloudflared tunnel --protocol http2 --url http://127.0.0.1:8000
-```
-把生成的 HTTPS 地址发给朋友即可（临时域名每次启动会变；当前鉴权不完善，仅限受控范围试用）。
+| 文件 | 说明 |
+|---|---|
+| `src/App.tsx` | tab 纯切换；「生活拼贴」下插入内联设置条组件；无弹窗、无重复上传 |
+| `src/collage/TemplateCollagePanel.tsx` | 内联设置条：风格选择、今日照片信息、模板预览、生成/再来一张/下载 |
+| `src/collage/templateStyles.ts` | 14 种风格配置与照片空位坐标（4-seasons 为纵向四段时间轴） |
+| `src/collage/templateRenderer.ts` | Canvas 合成 + 动态排版（`buildLayout`）+ 随机变体（种子）+ 便签卡与手绘点缀 |
+| `src/collage/collage.css` | 内联设置条与结果面板样式（响应式） |
+| `public/assets/collage/template-*.jpg` | 14 张 9:16 模板成图（本次全部专项训练完成） |
+| `public/assets/collage/pexels/` | 277 张免费授权素材与 `SOURCES.json` |
+| `tools/make_*_template.py` | 14 个专项模板生成脚本（PIL，可重跑调参） |
+| `docs/拼贴提示词.md` | 14 风格提示词 + 动态排版/随机变体通用提示词 |
+| `docs/生活拼贴-部署与Git指南.md` | 本文档 |
 
 ---
 
-## 七、常见问题
+## 六、验证清单
 
-**Q：提示词在哪里看？**
-A：`docs/拼贴提示词.md`，或在弹窗里点「复制提示词」按钮。
-
-**Q：AI 生成报「AI 服务不可用」怎么办？**
-A：说明未配置 Key 或网络不通，前端会自动用本地排版生成，功能不受影响。要启用 AI 请按第二节配置环境变量。
-
-**Q：本地排版效果够用吗？**
-A：本地 Canvas 已为 13 套风格分别实现差异化背景纹理 + 装饰，并按 2/3/4/5 张照片规则精确排布（9:16 竖屏），无需联网即可出图并下载；AI 生成在人像保真和复杂质感上更强。
-
-**Q：会不会影响原有共同日记功能？**
-A：不会。所有改动都是增量：新增独立文件 + App.tsx 增加 4 处入口/挂载代码 + main.py 挂载 1 行路由，未改动任何原有逻辑。
+- [x] `npx tsc --noEmit` 通过
+- [x] `npm run build` 通过
+- [x] 用 PIL 模拟 1/2/3/4/5/6/8 张照片：所有空位均被照片或便签填满，双图格拆分正确
+- [ ] 打开网站 → 共同日记 → 点「生活拼贴」tab → 内联设置条展开（无弹窗）
+- [ ] 切换风格 → 右侧小框预览随之变化
+- [ ] 今日有照片时，「立即生成」产出拼贴图、可下载、点「再来一张」排布变化
+- [ ] 今日无照片时给出友好提示
+- [ ] 手机浏览器同样可用
