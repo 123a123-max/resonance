@@ -113,33 +113,13 @@
 
 ## 本地运行
 
-```powershell
-# 1. 安装前端依赖
-npm ci
+从 GitHub 克隆或下载并解压仓库。Windows 装好 Node.js（20.19+ 的 20.x，或 22.12+）和 Python 3.11 后，双击 **启动.cmd**。首次启动会按项目清单安装前端和后端依赖，之后只在依赖文件更新时重新安装。
 
-# 2. 安装后端依赖（建议使用独立虚拟环境）
-python -m venv backend/.venv
-backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+浏览器会自动打开 <http://localhost:8010/>。点击「邀请朋友」，程序会用当前网卡的 IPv4 地址生成二维码。手机连同一个可互通的 Wi-Fi 后扫码即可加入。电脑换网后，重启启动器并重新生成二维码；电脑仍用同一个 localhost 地址，浏览器会保留原有身份。
 
-# 3. 打包前端（后端会直接托管 dist/）
-npm run build
+保持启动窗口开启；按 Ctrl+C 可停止服务。找不到可用的 Wi-Fi 或以太网地址时，仍可在电脑上使用，也可以复制链接在本机另一个浏览器打开。
 
-# 4. 启动
-backend\.venv\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
-```
-
-打开 <http://localhost:8000/>，健康检查为 <http://localhost:8000/api/health>。
-
-开发模式可另开终端执行 `npm run dev`，前端地址为 <http://localhost:3002/>（接口会代理到 8000）。
-
-### 关于端口
-
-前端在 `localhost` / `127.0.0.1` 访问时，默认把接口指向 `http://localhost:8000/api`。**如果 8000 端口被占用而改用其他端口，必须重新打包并指定接口地址**，否则页面能打开但数据请求会失败：
-
-```powershell
-$env:VITE_API_BASE_URL = "http://127.0.0.1:8010/api"
-npm run build
-```
+开发模式可运行 `npm run dev`，前端端口为 3002，接口和上传文件由 Vite 代理到 8000。生产构建默认使用页面自己的 `/api`。前后端分开部署时，可在构建前设置 `VITE_API_BASE_URL`。
 
 ## 数据与隐私
 

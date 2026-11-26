@@ -139,6 +139,11 @@ def empty_archive_trash(group_id: int, requester_id: int):
 
 @app.get('/api/health')
 def health(): return {'ok': True}
+
+@app.get('/api/lan-invite-origin')
+def lan_invite_origin():
+    return {'origin': os.environ.get('PLOG_INVITE_ORIGIN')}
+
 @app.post('/api/groups')
 def create_group(payload: GroupCreate):
     db=SessionLocal(); g=Group(name=payload.name, invite_code=secrets.token_urlsafe(6)[:8].upper()); db.add(g); db.commit(); db.refresh(g)
