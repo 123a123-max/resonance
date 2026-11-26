@@ -1,14 +1,32 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
+from io import BytesIO
 import os, hashlib
 from pathlib import Path
 import secrets, shutil, json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
 from pydantic import BaseModel
 from sqlalchemy import create_engine, String, Integer, DateTime, Date, Text, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
+
+register_heif_opener(thumbnails=False)
+
+# Diary dates use Beijing time even when the hosting server uses UTC.
+DIARY_TIMEZONE = timezone(timedelta(hours=8))
+def diary_day(now: datetime | None = None) -> date:
+    return (now or datetime.now(timezone.utc)).astimezone(DIARY_TIMEZONE).date()
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+def utc_timestamp(value: datetime) -> str:
+    # Historical SQLite rows are naive UTC; do not reinterpret them as server local time.
+    aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return aware.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 ROOT = Path(os.environ.get('PLOG_DATA_DIR', str(Path(__file__).resolve().parent)))
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -25,7 +43,7 @@ class Group(Base):
     invite_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     collection_time: Mapped[str] = mapped_column(String(5), default='00:00')
     owner_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 class Member(Base):
     __tablename__ = 'members'
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -33,7 +51,7 @@ class Member(Base):
     nickname: Mapped[str] = mapped_column(String(80))
     avatar: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     recovery_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 class Archive(Base):
     __tablename__ = 'archives'
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
@@ -41,7 +59,7 @@ class Archive(Base):
     date: Mapped[str] = mapped_column(String(20))
     payload: Mapped[str] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class Moment(Base):
     __tablename__ = 'moments'
@@ -52,9 +70,9 @@ class Moment(Base):
     media_url: Mapped[str] = mapped_column(String(300))
     caption: Mapped[str] = mapped_column(Text, default='')
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    day: Mapped[date] = mapped_column(Date, default=date.today)
+    day: Mapped[date] = mapped_column(Date, default=diary_day)
     withdrawn: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 Base.metadata.create_all(engine)
 try:
@@ -70,6 +88,12 @@ with engine.begin() as conn:
     try: conn.execute(text('UPDATE groups SET owner_member_id=(SELECT MIN(id) FROM members WHERE members.group_id=groups.id) WHERE owner_member_id IS NULL'))
     except Exception: pass
 app = FastAPI(title='一页共同日记 API')
+@app.middleware('http')
+async def fresh_application(request, call_next):
+    response = await call_next(request)
+    if request.url.path in ('/', '/index.html', '/sw.js') or request.url.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store'
+    return response
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
 app.mount('/uploads', StaticFiles(directory=UPLOADS), name='uploads')
 
@@ -84,7 +108,7 @@ class SettingsUpdate(BaseModel): collection_time: str
 def list_archives(group_id: int, include_deleted: bool=False):
     db=SessionLocal(); q=db.query(Archive).filter_by(group_id=group_id)
     if not include_deleted: q=q.filter(Archive.deleted_at.is_(None))
-    return [{'id':a.id,'date':a.date,'payload':json.loads(a.payload),'deleted_at':a.deleted_at.isoformat() if a.deleted_at else None} for a in q.order_by(Archive.created_at.desc()).all()]
+    return [{'id':a.id,'date':a.date,'payload':json.loads(a.payload),'deleted_at':utc_timestamp(a.deleted_at) if a.deleted_at else None} for a in q.order_by(Archive.created_at.desc()).all()]
 
 @app.post('/api/groups/{group_id}/archives')
 def save_archive(group_id: int, payload: dict):
@@ -98,7 +122,7 @@ def delete_archive(archive_id: str, requester_id: int):
     db=SessionLocal(); a=db.get(Archive,archive_id); g=db.get(Group,a.group_id) if a else None
     if not a: raise HTTPException(404,'归档不存在')
     if not g or requester_id!=g.owner_member_id: raise HTTPException(403,'只有创建者可以删除归档')
-    a.deleted_at=datetime.utcnow(); db.commit(); return {'ok':True}
+    a.deleted_at=utc_now(); db.commit(); return {'ok':True}
 
 @app.patch('/api/archives/{archive_id}/restore')
 def restore_archive(archive_id: str, requester_id: int):
@@ -115,6 +139,11 @@ def empty_archive_trash(group_id: int, requester_id: int):
 
 @app.get('/api/health')
 def health(): return {'ok': True}
+
+@app.get('/api/lan-invite-origin')
+def lan_invite_origin():
+    return {'origin': os.environ.get('PLOG_INVITE_ORIGIN')}
+
 @app.post('/api/groups')
 def create_group(payload: GroupCreate):
     db=SessionLocal(); g=Group(name=payload.name, invite_code=secrets.token_urlsafe(6)[:8].upper()); db.add(g); db.commit(); db.refresh(g)
@@ -185,13 +214,35 @@ def upload_moment(group_id: int, member_id: int=Form(...), caption: str=Form('')
     if not group or not member or member.group_id != group_id: raise HTTPException(404,'小组或成员不存在')
     is_video=(file.content_type or '').startswith('video/')
     if is_video and (duration is None or duration < 8 or duration > 60): raise HTTPException(400,'视频时长必须为 8～60 秒')
-    ext=Path(file.filename or '').suffix.lower() or ('.mp4' if is_video else '.jpg'); name=f'{secrets.token_hex(12)}{ext}'; target=UPLOADS/name
-    with target.open('wb') as out: shutil.copyfileobj(file.file,out)
-    m=Moment(group_id=group_id,member_id=member_id,kind='video' if is_video else 'image',media_url=f'/uploads/{name}',caption=caption,duration=duration,day=date.today()); db.add(m); db.commit(); db.refresh(m)
-    return {'id':m.id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'day':str(m.day)}
+    ext = Path(file.filename or '').suffix.lower() or ('.mp4' if is_video else '.jpg')
+    image_data = None
+    if not is_video and (ext in {'.heic', '.heif'} or file.content_type in {'image/heic', 'image/heif'}):
+        if file.size is not None and file.size > 40 * 1024 * 1024:
+            raise HTTPException(413, '图片超过 40MB，请选择较小的图片')
+        try:
+            with Image.open(file.file) as image:
+                if image.format != 'HEIF':
+                    raise UnidentifiedImageError('Expected a HEIF image')
+                image = ImageOps.exif_transpose(image)
+                image.thumbnail((1600, 1600))
+                with BytesIO() as buffer:
+                    image.convert('RGB').save(buffer, format='JPEG', quality=82)
+                    image_data = buffer.getvalue()
+        except (OSError, ValueError, Image.DecompressionBombError) as error:
+            raise HTTPException(422, '无法读取这张 HEIC 照片，请尝试用相册导出为 JPEG') from error
+        ext = '.jpg'
+    name = f'{secrets.token_hex(12)}{ext}'
+    target = UPLOADS / name
+    if image_data is not None:
+        target.write_bytes(image_data)
+    else:
+        with target.open('wb') as out:
+            shutil.copyfileobj(file.file, out)
+    m=Moment(group_id=group_id,member_id=member_id,kind='video' if is_video else 'image',media_url=f'/uploads/{name}',caption=caption,duration=duration,day=diary_day()); db.add(m); db.commit(); db.refresh(m)
+    return {'id':m.id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'day':str(m.day),'created_at':utc_timestamp(m.created_at)}
 @app.get('/api/groups/{group_id}/moments')
 def list_moments(group_id: int, day: date|None=None):
-    db=SessionLocal(); q=db.query(Moment).filter_by(group_id=group_id,withdrawn=0); items=q.filter_by(day=day or date.today()).order_by(Moment.created_at).all(); return [{'id':m.id,'member_id':m.member_id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'created_at':m.created_at.isoformat()} for m in items]
+    db=SessionLocal(); q=db.query(Moment).filter_by(group_id=group_id,withdrawn=0); items=q.filter_by(day=day or diary_day()).order_by(Moment.created_at).all(); return [{'id':m.id,'member_id':m.member_id,'kind':m.kind,'media_url':m.media_url,'caption':m.caption,'duration':m.duration,'created_at':utc_timestamp(m.created_at)} for m in items]
 @app.patch('/api/groups/{group_id}/moments/clear')
 def clear_group_moments(group_id: int, requester_id: int, day: date|None=None):
     db=SessionLocal(); g=db.get(Group, group_id)
